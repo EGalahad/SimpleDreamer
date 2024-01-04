@@ -15,6 +15,62 @@ import torch.nn.functional as F
 import yaml
 from attrdict import AttrDict
 
+import numpy as np
+from pathlib import Path
+import cv2
+import wandb
+
+class VideoRecorder:
+    """Utility class for logging evaluation videos."""
+
+    def __init__(self, root_dir, wandb, render_size=384, fps=15):
+        self.save_dir = Path(root_dir) / "video" if root_dir else None
+        self._wandb = wandb
+        self.render_size = render_size
+        self.fps = fps
+        self.frames = []
+        self.enabled = False
+
+    def init(self, env, enabled=True):
+        self.frames = []
+        self.enabled = self.save_dir and enabled
+        self.record(env)
+
+    def record(self, env):
+        if self.enabled:
+            frame = env.render(
+                mode="rgb_array",
+                height=self.render_size,
+                width=self.render_size,
+                camera_id=0,
+            )
+            if frame is not None:
+                self.frames.append(frame)
+
+    def save(self, step, key="videos/eval_video", file_name="eval_video.mp4", upload=False):
+        if self.enabled and len(self.frames) > 0:
+            frames = np.stack(self.frames).transpose(0, 3, 1, 2)
+            if self._wandb:
+                self._wandb.log(
+                    {key: wandb.Video(frames, fps=self.fps, format="mp4")}, step=step
+                )
+            # save to save_dir
+            if self.save_dir:
+                os.makedirs(self.save_dir, exist_ok=True)
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
+                out = cv2.VideoWriter(str(self.save_dir / file_name), fourcc, self.fps, (self.render_size, self.render_size))
+                frames = frames.transpose(0, 2, 3, 1)
+
+                # Write frames to the file
+                for frame in frames:
+                    # cv2 expects frames in BGR format so if your frames are in RGB, you might need to convert them
+                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    out.write(frame_bgr)
+
+                # Release the VideoWriter
+                out.release()
+
+
 def horizontal_forward(network, x, y=None, input_shape=(-1,), output_shape=(-1,)):
     batch_with_horizon_shape = x.shape[: -len(input_shape)]
     if not batch_with_horizon_shape:

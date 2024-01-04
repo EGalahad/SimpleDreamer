@@ -3,6 +3,13 @@ import dmc2gym
 
 from dreamer.envs.wrappers import *
 
+import sys
+import os
+
+dir = os.path.dirname(__file__)
+sys.path.append(dir)
+from walk_in_the_park.env_utils import make_mujoco_env
+
 
 def make_dmc_env(
     domain_name,
@@ -37,6 +44,24 @@ def make_atari_env(task_name, skip_frame, width, height, seed, pixel_norm=True):
     env = SkipFrame(env, skip_frame)
     if pixel_norm:
         env = PixelNormalization(env)
+    env.seed(seed)
+    return env
+
+
+def make_a1_env(task_name, seed):
+    assert task_name == "run"
+    env_name = "A1Run-v0"
+    control_frequency = 50
+    randomize_ground = True
+    env = make_mujoco_env(
+        env_name,
+        control_frequency=control_frequency,
+        action_filter_high_cut=None,
+        action_history=1,
+        randomize_ground=randomize_ground
+    )
+    # state_dim = env.observation_space.shape[0]
+    # env = SkipFrame(env, skip_frame)
     env.seed(seed)
     return env
 

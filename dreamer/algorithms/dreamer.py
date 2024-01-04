@@ -12,6 +12,7 @@ from dreamer.utils.utils import (
     compute_lambda_values,
     create_normal_dist,
     DynamicInfos,
+    VideoRecorder,
 )
 from dreamer.utils.buffer import ReplayBuffer
 
@@ -23,6 +24,7 @@ class Dreamer:
         discrete_action_bool,
         action_size,
         writer,
+        wandb_logger,
         device,
         config,
     ):
@@ -69,6 +71,7 @@ class Dreamer:
         self.behavior_learning_infos = DynamicInfos(self.device)
 
         self.writer = writer
+        self.wandb_logger = wandb_logger
         self.num_total_episode = 0
 
     def train(self, env):
@@ -163,6 +166,16 @@ class Dreamer:
         if self.config.use_continue_flag:
             model_loss += continue_loss.mean()
 
+        loss_stats = {
+            "kl_divergence_loss": kl_divergence_loss.item(),
+            "reconstruction_observation_loss": reconstruction_observation_loss.mean().item(),
+            "reward_loss": reward_loss.mean().item(),
+        }
+        loss_stats = { f"Loss/dynamics/{key}": value for key, value in loss_stats.items() }
+        [self.writer.add_scalar(key, value, self.num_total_episode) for key, value in loss_stats.items()]
+        loss_stats.update({ "num_total_episode": self.num_total_episode })
+        self.wandb_logger.log(loss_stats)
+
         self.model_optimizer.zero_grad()
         model_loss.backward()
         nn.utils.clip_grad_norm_(
@@ -241,9 +254,25 @@ class Dreamer:
         )
         self.critic_optimizer.step()
 
+        loss_stats = {
+            "actor_loss": actor_loss.item(),
+            "value_loss": value_loss.item(),
+        }
+        loss_stats = { f"Loss/behavior/{key}": value for key, value in loss_stats.items() }
+        [self.writer.add_scalar(key, value, self.num_total_episode) for key, value in loss_stats.items()]
+        loss_stats.update({ "num_total_episode": self.num_total_episode })
+        self.wandb_logger.log(loss_stats)
+
     @torch.no_grad()
     def environment_interaction(self, env, num_interaction_episodes, train=True):
         for epi in range(num_interaction_episodes):
+            if not train:
+                video = VideoRecorder(
+                    self.writer.log_dir,
+                    self.wandb_logger,
+                    fps=60,
+                )
+                video.init(env)
             posterior, deterministic = self.rssm.recurrent_model_input_init(1)
             action = torch.zeros(1, self.action_size).to(self.device)
 
@@ -284,16 +313,21 @@ class Dreamer:
                     torch.from_numpy(next_observation).float().to(self.device)
                 )
                 observation = next_observation
+                if not train:
+                    video.record(env)
                 if done:
                     if train:
                         self.num_total_episode += 1
                         self.writer.add_scalar(
-                            "training score", score, self.num_total_episode
+                            "Score/training", score, self.num_total_episode
                         )
+                        self.wandb_logger.log({"Score/training": score})
                     else:
                         score_lst = np.append(score_lst, score)
+                        video.save(step=self.num_total_episode, file_name=f"total_episode_{self.num_total_episode}.mp4", upload=epi==num_interaction_episodes-1)
                     break
         if not train:
             evaluate_score = score_lst.mean()
             print("evaluate score : ", evaluate_score)
-            self.writer.add_scalar("test score", evaluate_score, self.num_total_episode)
+            self.writer.add_scalar("Score/test", evaluate_score, self.num_total_episode)
+            self.wandb_logger.log({"Score/test": evaluate_score})

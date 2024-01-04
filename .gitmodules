@@ -1,0 +1,3 @@
+[submodule "dreamer/envs/walk_in_the_park"]
+	path = dreamer/envs/walk_in_the_park
+	url = git@github.com:EGalahad/walk_in_the_park

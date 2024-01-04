@@ -15,6 +15,17 @@ class Encoder(nn.Module):
         activation = getattr(nn, self.config.activation)()
         self.observation_shape = observation_shape
 
+        if len(self.observation_shape) == 1:
+            # state observation
+            self.network = (
+                nn.Linear(
+                    self.observation_shape[0],
+                    config.parameters.dreamer.embedded_state_size,
+                )
+            )
+            self.network.apply(initialize_weights)
+            return
+
         self.network = nn.Sequential(
             nn.Conv2d(
                 self.observation_shape[0],

@@ -17,6 +17,17 @@ class Decoder(nn.Module):
         activation = getattr(nn, self.config.activation)()
         self.observation_shape = observation_shape
 
+        if len(self.observation_shape) == 1:
+            # state observation
+            self.network = (
+                nn.Linear(
+                    self.deterministic_size + self.stochastic_size,
+                    self.observation_shape[0],
+                )
+            )
+            self.network.apply(initialize_weights)
+            return
+
         self.network = nn.Sequential(
             nn.Linear(
                 self.deterministic_size + self.stochastic_size, self.config.depth * 32
